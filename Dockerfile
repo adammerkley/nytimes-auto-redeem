@@ -53,7 +53,7 @@ RUN chmod 0644 /etc/cron.d/nytimes-cron \
 
 # cron starts with a sanitized env, so dump the container env to a file the
 # cron job can source before running redeem.js. Then start cron and tail the log.
-CMD printenv | grep -E '^(NYTIMES_|LIBRARY_|COOKIE_|CHROME_|USER_DATA_|FAIRVIEW_|LIBRARY_LOGIN_|TZ|LOCALE|USER_AGENT_)' \
+CMD printenv | grep -E '^(NYTIMES_|LIBRARY_|COOKIE_|CHROME_|USER_DATA_|TZ|LOCALE|USER_AGENT_)' \
         | sed 's/^\(.*\)$/export \1/' > /app/.env-cron \
  && cron \
  && tail -f /var/log/cron.log

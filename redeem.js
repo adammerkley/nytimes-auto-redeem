@@ -1,13 +1,13 @@
-// redeem.js — NY Times redemption via Fairview Library
+// redeem.js: NY Times redemption via the Scottsdale Public Library
 //
 // This rewrite addresses bot detection by:
 //   1. Using `puppeteer-real-browser` (real Chrome + stealth patches built-in)
 //      instead of bundled Chromium with the stealth plugin.
 //   2. Applying browser fingerprint setup (UA, viewport, timezone, locale, headers,
 //      and JS-level evasions) to BOTH the original page AND the new tab that
-//      opens when the Fairview site links out to NY Times. The old script
+//      opens when the library site links out to NY Times. The old script
 //      configured only the first page, so the new tab arrived at NYT looking
-//      like a default Puppeteer instance — the single biggest detection hole.
+//      like a default Puppeteer instance, the single biggest detection hole.
 //   3. Running headful inside Xvfb (set up in the Dockerfile / crontab). Headful
 //      Chrome is dramatically harder to detect than `headless: 'new'`.
 //   4. Reusing a persistent Chrome user-data-dir so the profile, history, and
@@ -35,9 +35,12 @@ const NYTIMES_EMAIL = process.env.NYTIMES_EMAIL;
 const NYTIMES_PASSWORD = process.env.NYTIMES_PASSWORD;
 const CHROME_EXECUTABLE_PATH = process.env.CHROME_EXECUTABLE_PATH;
 const LIBRARY_LOGIN_URL = process.env.LIBRARY_LOGIN_URL ||
-    'https://catalog.bccls.org/polaris/logon.aspx?ctx=37.1033.0.0.6';
-const FAIRVIEW_HOME_URL = process.env.FAIRVIEW_HOME_URL || 'https://fairviewlibrarynj.org/';
-const TIMEZONE = process.env.TZ || 'America/New_York';
+    'https://scottsdale.polarislibrary.com/polaris/logon.aspx';
+// Library page that leads to NY Times. On Polaris this is the e-resources link,
+// which redirects straight to the NYT redeem page once you are logged in.
+const LIBRARY_LINK_URL = process.env.LIBRARY_LINK_URL ||
+    'https://scottsdale.polarislibrary.com/polaris/Search/misc/esources.aspx?Target=1557';
+const TIMEZONE = process.env.TZ || 'America/Phoenix';
 const LOCALE = process.env.LOCALE || 'en-US';
 
 
@@ -106,9 +109,18 @@ async function humanClick(page, elementHandle) {
     }
 }
 
-async function humanType(elementHandle, text) {
+async function humanType(elementHandle, text, { clear = false } = {}) {
     if (!elementHandle) return;
     try {
+        if (clear) {
+            // Chrome can autofill saved logins from the profile; typing on top of
+            // that doubles the value and the login is rejected. Empty the field first.
+            await elementHandle.evaluate(el => {
+                el.value = '';
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }
         for (const ch of text) {
             await elementHandle.type(ch, { delay: 0 });
             await randomDelay(60, 180);
@@ -266,15 +278,22 @@ async function applyStealthToPage(page) {
     } catch (_) {}
 }
 
+// chrome-launcher appends Chrome's stderr to chrome-err.log inside the profile and
+// reads the debugging port from it. A stale log from a killed run points at a dead
+// port (ECONNREFUSED), so clear it, plus the singleton locks, before every launch.
+async function cleanStaleChromeFiles() {
+    await fs.mkdir(USER_DATA_DIR, { recursive: true }).catch(() => null);
+    for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie',
+                     'DevToolsActivePort', 'chrome-err.log', 'chrome.pid']) {
+        await fs.unlink(path.join(USER_DATA_DIR, f)).catch(() => null);
+    }
+}
+
 async function launchBrowser({ headless = false } = {}) {
     await fs.mkdir(USER_DATA_DIR, { recursive: true }).catch(() => null);
     await fs.mkdir(SCREENSHOT_DIR, { recursive: true }).catch(() => null);
 
-    // Remove stale Chrome singleton files left behind by a crashed previous run.
-    // Without this, Chrome refuses to start when the lock points to a dead PID.
-    for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-        await fs.unlink(path.join(USER_DATA_DIR, f)).catch(() => null);
-    }
+    await cleanStaleChromeFiles();
 
     const { browser, page } = await connect({
         headless,
@@ -300,7 +319,7 @@ async function launchBrowser({ headless = false } = {}) {
     });
 
     // Apply stealth setup to every page that is ever created in this browser —
-    // including the tab that the Fairview site opens when we click the NYT link.
+    // including the tab that the library site opens when we click the NYT link.
     browser.on('targetcreated', async (target) => {
         try {
             if (target.type() !== 'page') return;
@@ -365,18 +384,21 @@ async function promptForLibraryCredentials() {
     const readline = require('readline');
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const ask = (q) => new Promise(resolve => rl.question(q, a => resolve(a.trim())));
-    const cardNumber = LIBRARY_CARD_NUMBER || await ask('Library card # (BCCLS): ');
+    const cardNumber = LIBRARY_CARD_NUMBER || await ask('Library barcode or username: ');
     const pin = LIBRARY_PIN || await ask('Library PIN/password: ');
     rl.close();
     return { cardNumber, pin };
 }
 
 async function loginToLibrary(page, { cardNumber, pin }) {
-    console.log('🔐 Logging in to Fairview/BCCLS...');
+    console.log('🔐 Logging in to Scottsdale Public Library...');
     await page.goto(LIBRARY_LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
     await randomDelay(1500, 2800); // simulate landing-page glance
 
+    // The Polaris login page itself says "Don't forget to log out", so a plain text
+    // match is a false positive. Only count as logged in when there is no password box.
     const alreadyLoggedIn = await page.evaluate(() =>
+        !document.querySelector('input[type="password"]') &&
         /log\s*out|sign\s*out/i.test(document.body.innerText)
     ).catch(() => false);
     if (alreadyLoggedIn) {
@@ -410,7 +432,7 @@ async function loginToLibrary(page, { cardNumber, pin }) {
         await safeScreenshot(page, 'library-card-unclickable.png');
         return false;
     }
-    await humanType(cardInput, cardNumber);
+    await humanType(cardInput, cardNumber, { clear: true });
     await randomDelay(300, 700);
 
     if (!await humanClick(page, pinInput)) {
@@ -418,7 +440,7 @@ async function loginToLibrary(page, { cardNumber, pin }) {
         await safeScreenshot(page, 'library-pin-unclickable.png');
         return false;
     }
-    await humanType(pinInput, pin);
+    await humanType(pinInput, pin, { clear: true });
     await randomDelay(400, 900);
 
     const navPromise = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null);
@@ -442,8 +464,12 @@ async function loginToLibrary(page, { cardNumber, pin }) {
     }
 
     const pageText = await page.evaluate(() => document.body.innerText.toLowerCase()).catch(() => '');
-    if (pageText.includes('library card') && pageText.includes('password')) {
+    const stillOnLogin = await page.evaluate(() => !!document.querySelector('input[type="password"]')).catch(() => false);
+    if (stillOnLogin || (pageText.includes('library card') && pageText.includes('password'))) {
         console.warn('⚠️  Library login may have failed. Check credentials.');
+        await safeScreenshot(page, 'library-login-result.png');
+    } else {
+        console.log('✅ Library login submitted');
     }
     return true;
 }
@@ -557,12 +583,29 @@ async function loginToNyTimes(page) {
 }
 
 // --------------------------------------------------------------------------
-// Fairview -> NY Times navigation
+// Library -> NY Times navigation
 // --------------------------------------------------------------------------
 
-async function openNyTimesFromFairview(page, browser) {
-    console.log('🌐 Navigating to Fairview Library site...');
-    await page.goto(FAIRVIEW_HOME_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+async function openNyTimesFromLibrary(page, browser) {
+    console.log('🌐 Opening the library NY Times link...');
+    await page.goto(LIBRARY_LINK_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    // Polaris e-resource links (esources.aspx?Target=N) redirect straight to NYT
+    // once the library session is logged in, so there may be no link to click.
+    if (!/nytimes\.com/i.test(page.url())) {
+        await page.waitForFunction(() => location.hostname.endsWith('nytimes.com'), { timeout: 12000 }).catch(() => null);
+    }
+    if (/nytimes\.com/i.test(page.url())) {
+        console.log('➡️  Library link redirected straight to NY Times');
+        if (!giftCode) {
+            const found = extractCodeFromUrl(page.url());
+            if (found) { giftCode = found; console.log('🎫 Extracted gift code from NY Times URL'); }
+        }
+        await randomDelay(2000, 4000);
+        await page.waitForNetworkIdle({ timeout: 15000 }).catch(() => null);
+        return page;
+    }
+
     // Spend a believable amount of time on the page before clicking out.
     await randomDelay(2500, 4500);
 
@@ -585,13 +628,13 @@ async function openNyTimesFromFairview(page, browser) {
         });
         if (nytLinkHref) {
             const found = extractCodeFromUrl(nytLinkHref);
-            if (found) { giftCode = found; console.log('🎫 Extracted gift code from Fairview link'); }
+            if (found) { giftCode = found; console.log('🎫 Extracted gift code from library link'); }
         }
     }
     if (!giftCode) {
         const pageText = await page.evaluate(() => document.body.innerText);
         const found = extractCodeFromText(pageText);
-        if (found) { giftCode = found; console.log('🎫 Extracted gift code from Fairview page text'); }
+        if (found) { giftCode = found; console.log('🎫 Extracted gift code from library page text'); }
     }
 
     const findNytLink = () => page.evaluateHandle(() => {
@@ -636,18 +679,17 @@ async function openNyTimesFromFairview(page, browser) {
     }
 
     if (!linkElement) {
-        console.error('❌ ERROR: Could not find NY Times link on Fairview site.');
-        await safeScreenshot(page, 'fairview-no-nytimes.png');
+        console.error('❌ ERROR: Could not find NY Times link on the library site.');
+        await safeScreenshot(page, 'library-no-nytimes.png');
         return null;
     }
 
-    // Prefer navigating directly to the tile's href over clicking it. The
-    // Fairview "Online" page has a buggy ad/tracking script tied to a
-    // neighboring resource card (Zinio) that fires once that part of the
-    // page scrolls into view and floods the browser with popups to that
-    // card's URL — this swallows clicks aimed at the NY Times tile right
-    // next to it, so the click-based flow reliably times out. We already
-    // have the real href in hand, so skip the click entirely.
+    // Prefer navigating directly to the tile's href over clicking it. Some
+    // library e-resource pages have a buggy ad/tracking script tied to a
+    // neighboring resource card that fires once that part of the page scrolls
+    // into view and floods the browser with popups, which swallows clicks aimed
+    // at the NY Times tile right next to it, so the click-based flow can time
+    // out. We already have the real href in hand, so skip the click entirely.
     let nytimesPage = null;
     const directHref = await linkElement.evaluate(el => el.href).catch(() => null);
     if (directHref && /^https?:\/\//i.test(directHref)) {
@@ -709,7 +751,7 @@ async function openNyTimesFromFairview(page, browser) {
         await page.keyboard.press('Escape').catch(() => null);
         if (!await humanClick(page, linkElement)) {
             console.error('❌ ERROR: NY Times link not clickable.');
-            await safeScreenshot(page, 'fairview-nytimes-unclickable.png');
+            await safeScreenshot(page, 'library-nytimes-unclickable.png');
             return null;
         }
 
@@ -744,7 +786,7 @@ async function openNyTimesFromFairview(page, browser) {
             ]);
             if (!nytimesPage) {
                 console.error('❌ ERROR: NY Times redemption page did not open.');
-                await safeScreenshot(page, 'fairview-nytimes-timeout.png');
+                await safeScreenshot(page, 'library-nytimes-timeout.png');
                 return null;
             }
         }
@@ -892,7 +934,7 @@ async function redeemSubscription() {
     const timestamp = new Date().toISOString();
     console.log(`\n${'='.repeat(60)}`);
     console.log(`🕐 Starting redemption: ${timestamp}`);
-    console.log(giftCode ? `🎫 Using code: ${giftCode.substring(0, 8)}...` : '🎫 Gift code not yet known — will fetch from Fairview');
+    console.log(giftCode ? `🎫 Using code: ${giftCode.substring(0, 8)}...` : '🎫 Gift code not yet known, will fetch from the library link');
     console.log(`${'='.repeat(60)}\n`);
 
     let browser;
@@ -917,18 +959,18 @@ async function redeemSubscription() {
             await loginToNyTimes(page);
         }
 
-        console.log('🌐 Opening NY Times redemption from Fairview site...');
+        console.log('🌐 Opening NY Times redemption from the library link...');
         await randomDelay(800, 2000);
 
-        const nytimesPage = await openNyTimesFromFairview(page, browser);
+        const nytimesPage = await openNyTimesFromLibrary(page, browser);
         if (!nytimesPage) {
             await logAttempt(false, 'NYTIMES_LINK_FAILED', giftCode);
             return false;
         }
 
         if (!giftCode) {
-            console.error('❌ ERROR: Could not find gift code on Fairview site or NY Times page.');
-            console.error('   Set NYTIMES_GIFT_CODE in .env as a fallback, or check that the Fairview NYT page is accessible.');
+            console.error('❌ ERROR: Could not find gift code on the library site or NY Times page.');
+            console.error('   Set NYTIMES_GIFT_CODE in .env as a fallback, or check that the library NY Times link is accessible.');
             await safeScreenshot(nytimesPage, 'no-gift-code.png');
             await logAttempt(false, 'NO_GIFT_CODE', null);
             return false;
@@ -1136,11 +1178,12 @@ async function redeemSubscription() {
 async function manualLogin() {
     console.log('\n=== Manual Login Mode ===');
     console.log('Two tabs will open:');
-    console.log('  Tab 1 — Fairview/BCCLS: log in with your library card, then');
-    console.log('           navigate to the Fairview site and click the NY Times icon.');
-    console.log('  Tab 2 — NY Times: log in to (or create) your NYT account.');
+    console.log('  Tab 1: Scottsdale Public Library. Log in with your library card, then');
+    console.log('         open the library NY Times link and confirm it reaches the redeem page.');
+    console.log('  Tab 2: NY Times. Log in to (or create) your NYT account.');
     console.log('Complete both logins, then press Ctrl+C to save cookies.\n');
 
+    await cleanStaleChromeFiles();
     const { browser, page } = await connect({
         headless: false,
         turnstile: true,
@@ -1182,8 +1225,7 @@ async function manualLogin() {
                 const allCookies = await page.cookies(
                     'https://www.nytimes.com',
                     'https://myaccount.nytimes.com',
-                    'https://catalog.bccls.org',
-                    'https://fairviewlibrarynj.org'
+                    'https://scottsdale.polarislibrary.com'
                 );
                 const json = JSON.stringify(allCookies, null, 2);
                 const payload = encryptString(json);

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>nytimes-redeem</Name>
+  <Repository>nytimes-redeem</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/adammerkley/nytimes-auto-redeem</Support>
+  <Project>https://github.com/adammerkley/nytimes-auto-redeem</Project>
+  <Overview>Redeems the Scottsdale Public Library New York Times pass every day at 6:05 AM (container time zone). Uses a real headful Chrome inside a virtual display. The image is built locally with: docker build -t nytimes-redeem . in the project folder (for example /mnt/user/appdata/nytimes-redeem). Logs and failure screenshots are written to the cookies folder.</Overview>
+  <Category>Tools:</Category>
+  <WebUI/>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams>--shm-size=1g</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Local image. Build it first: cd /mnt/user/appdata/nytimes-redeem and run docker build -t nytimes-redeem .</Requires>
+  <Config Name="Cookies and Chrome profile" Target="/app/cookies" Default="/mnt/user/appdata/nytimes-redeem/cookies" Mode="rw" Description="Saved sessions, Chrome profile, redemption history and failure screenshots." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nytimes-redeem/cookies</Config>
+  <Config Name="Time zone" Target="TZ" Default="America/Phoenix" Mode="" Description="Sets what time 6:05 AM means for the daily run." Type="Variable" Display="always" Required="true" Mask="false">America/Phoenix</Config>
+  <Config Name="Library login URL" Target="LIBRARY_LOGIN_URL" Default="https://scottsdale.polarislibrary.com/polaris/logon.aspx" Mode="" Description="Scottsdale Public Library (Polaris) login page." Type="Variable" Display="always" Required="true" Mask="false">https://scottsdale.polarislibrary.com/polaris/logon.aspx</Config>
+  <Config Name="Library NYT link URL" Target="LIBRARY_LINK_URL" Default="https://scottsdale.polarislibrary.com/polaris/Search/misc/esources.aspx?Target=1557" Mode="" Description="The library link that redirects to the NYT redeem page with the gift code." Type="Variable" Display="always" Required="true" Mask="false">https://scottsdale.polarislibrary.com/polaris/Search/misc/esources.aspx?Target=1557</Config>
+  <Config Name="Library barcode or username" Target="LIBRARY_CARD_NUMBER" Default="" Mode="" Description="Exactly what you type in the Barcode or Username box. No quotes." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Library PIN or password" Target="LIBRARY_PIN" Default="" Mode="" Description="Library PIN or password. No quotes." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="NYT account email" Target="NYTIMES_EMAIL" Default="" Mode="" Description="Email of the NYT account that gets the access. No quotes." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="NYT account password" Target="NYTIMES_PASSWORD" Default="" Mode="" Description="Password of the NYT account. No quotes. Leave email and password empty only if the account uses Google sign-in." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Cookie encryption key (optional)" Target="COOKIE_ENCRYPTION_KEY" Default="" Mode="" Description="Optional. Generate with: openssl rand -base64 32. Encrypts the saved cookie file." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>

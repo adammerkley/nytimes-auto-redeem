@@ -1,17 +1,22 @@
-# nytimes-auto-redeem
+# nytimes-auto-redeem (Scottsdale Public Library)
 
-Automates redemption of a New York Times subscription gift code. It runs a
-headful real Chrome browser with anti-bot measures, logs in to both the
-Fairview/BCCLS library portal and NY Times automatically, and records each
-attempt with screenshots and history.
+Automates redemption of the free New York Times pass that the Scottsdale Public
+Library offers to cardholders. It runs a headful real Chrome browser with
+anti-bot measures, logs in to the Scottsdale Public Library (Polaris) and to
+NY Times automatically, and records each attempt with screenshots and history.
+
+This is a fork of [rawhideron/nytimes-auto-redeem](https://github.com/rawhideron/nytimes-auto-redeem),
+adapted for the Scottsdale Public Library and for running on Unraid. See
+[NOTICE.md](NOTICE.md).
 
 ## Purpose
 
-The goal is to redeem a time-limited gift code reliably without manual steps:
+The goal is to redeem the time-limited library pass reliably without manual steps:
 
-- Log in to NY Times (email/password, with Google SSO fallback).
-- Log in to the Fairview/BCCLS library portal (when credentials are set).
-- Visit the Fairview Library site and follow the NY Times redemption link.
+- Log in to the Scottsdale Public Library with your barcode or username and PIN.
+- Log in to NY Times (email and password, with a Google SSO fallback).
+- Open the library's NY Times link, which redirects to the NYT redeem page with
+  the gift code in the URL.
 - Detect common failure modes (bot detection, auth required, expired code).
 - Click the Redeem button when available.
 - Save cookies and log results to track success over time.
@@ -19,14 +24,16 @@ The goal is to redeem a time-limited gift code reliably without manual steps:
 ## How it works
 
 - `redeem.js` is the main script. It uses `puppeteer-real-browser` with real
-  Google Chrome (not bundled Chromium) running headful inside Xvfb to defeat
-  NYT bot detection.
+  Google Chrome (not bundled Chromium) running headful inside Xvfb to defeat NYT
+  bot detection.
 - Cookies and redemption history are stored under `cookies/` (mounted as a
   volume in Docker). The Chrome user-data-dir is also persisted there so the
   browser profile stays consistent across daily runs.
-- The script does not go directly to `nytimes.com`; it follows the Fairview
-  Library → NY Times link so the gift code is picked up automatically.
-- A cron job inside the container runs the redemption daily at 6:05 AM ET.
+- The script does not go directly to `nytimes.com`. It follows the library's
+  e-resources link, which sends the logged-in browser to NYT with the gift code
+  in the URL, so the code is picked up automatically.
+- A cron job inside the container runs the redemption daily at 6:05 AM in the
+  container's time zone (`America/Phoenix` by default).
 
 ## Functions and what they do
 
@@ -34,56 +41,61 @@ From `redeem.js`:
 
 - `randomDelay(min, max)`: adds jittered pauses to appear more human.
 - `humanMouseMove(page, ...)`: moves the mouse along a noisy curved path.
-- `humanClick(page, el)`: scrolls into view, moves mouse naturally, clicks.
-- `humanType(el, text)`: types one character at a time with random delays.
+- `humanClick(page, el)`: scrolls into view, moves the mouse naturally, clicks.
+- `humanType(el, text)`: types one character at a time with random delays, and
+  can empty the field first so autofilled values are not doubled.
+- `cleanStaleChromeFiles()`: removes stale Chrome port, log and lock files left
+  by an earlier unclean shutdown.
 - `loadHistory()`: reads `cookies/redemption-history.json` or initialises one.
 - `saveHistory(history)`: persists history to disk.
-- `logAttempt(success, status, codeUsed)`: records success/failure, detects
+- `logAttempt(success, status, codeUsed)`: records success or failure, detects
   code changes, and keeps only the last 30 attempts.
-- `analyzePattern(history)`: prints a quick summary and warns on repeated
-  failures.
-- `loadCookies(page)`: loads cookies from `cookies/nytimes-cookies.json` into
-  the browser session (decrypts when `COOKIE_ENCRYPTION_KEY` is set).
-- `saveCookies(page)`: writes the current browser cookies to disk (encrypts
-  when `COOKIE_ENCRYPTION_KEY` is set).
-- `loginToLibrary(page, credentials)`: signs in to the Fairview/BCCLS portal.
-- `loginToNyTimes(page)`: logs in to NY Times using email/password; falls back
-  to "Continue with Google" if email/password fails or the account is Google
-  SSO only.
-- `openNyTimesFromFairview(page, browser)`: opens the NY Times link from the
-  Fairview Library site.
+- `analyzePattern(history)`: prints a quick summary and warns on repeated failures.
+- `loadCookies(page)`: loads cookies from `cookies/nytimes-cookies.json` into the
+  browser session (decrypts when `COOKIE_ENCRYPTION_KEY` is set).
+- `saveCookies(page)`: writes the current browser cookies to disk (encrypts when
+  `COOKIE_ENCRYPTION_KEY` is set).
+- `loginToLibrary(page, credentials)`: signs in to the Scottsdale Public Library
+  Polaris portal.
+- `loginToNyTimes(page)`: logs in to NY Times using email and password, and falls
+  back to "Continue with Google" if that fails or the account is Google SSO only.
+- `openNyTimesFromLibrary(page, browser)`: opens the library's NY Times link,
+  handling the direct redirect first and a tile click as a fallback.
 - `ensureGiftCodeFilled(page)`: fills the gift code if the page asks for it.
-- `redeemSubscription()`: main flow — launch browser, log in to NYT and
-  library, follow Fairview → NY Times path, check for failure states, click
-  Redeem, and log the result.
-- `manualLogin()`: opens a visible Chrome with two tabs (BCCLS login and NYT
-  login) so you can seed both sessions at once; Ctrl+C saves cookies from all
-  relevant domains.
+- `redeemSubscription()`: main flow. Launches the browser, logs in to the library
+  and NYT, follows the library link, checks for failure states, clicks Redeem,
+  and logs the result.
+- `manualLogin()`: opens a visible Chrome with two tabs (library login and NYT
+  login) so you can seed both sessions at once. Stopping it with SIGINT saves
+  cookies from all relevant domains.
 - `showHistory()`: prints a summary of past attempts.
 
-## Security precautions
+## Settings
 
-Sensitive values are read from environment variables via a `.env` file:
+Copy `.env.example` to `.env` and fill it in. Values have no quotes.
 
 - `NYTIMES_EMAIL`: NY Times account email for automated login.
-- `NYTIMES_PASSWORD`: NY Times account password. If the account uses Google
-  SSO only, the script falls back to clicking "Continue with Google"
-  automatically using the existing Chrome session.
-- `LIBRARY_CARD_NUMBER`: library card number for the Fairview/BCCLS login.
-- `LIBRARY_PIN`: library PIN/password for the Fairview/BCCLS login.
-- `NYTIMES_GIFT_CODE`: optional fallback gift code; normally auto-fetched from
-  the Fairview site.
+- `NYTIMES_PASSWORD`: NY Times account password. If the account uses Google SSO
+  only, the script falls back to clicking "Continue with Google" using the
+  existing Chrome session.
+- `LIBRARY_CARD_NUMBER`: exactly what you type in the "Barcode or Username" box.
+- `LIBRARY_PIN`: library PIN or password.
+- `NYTIMES_GIFT_CODE`: optional fallback gift code. Normally read from the library
+  redirect, so leave it unset.
 
-Optional URL overrides:
+Optional overrides:
 
-- `LIBRARY_LOGIN_URL`: defaults to the Fairview/BCCLS login page.
-- `FAIRVIEW_HOME_URL`: defaults to `https://fairviewlibrarynj.org/en/`.
+- `LIBRARY_LOGIN_URL`: defaults to
+  `https://scottsdale.polarislibrary.com/polaris/logon.aspx`.
+- `LIBRARY_LINK_URL`: defaults to
+  `https://scottsdale.polarislibrary.com/polaris/Search/misc/esources.aspx?Target=1557`.
+- `TZ`: container time zone, `America/Phoenix` by default. It decides what 6:05 AM means.
 - `CHROME_EXECUTABLE_PATH`: path to a Chrome binary (set automatically in the
   Docker image to `/usr/bin/google-chrome-stable`).
 - `USER_DATA_DIR`: path to the Chrome user data directory (defaults to
   `cookies/chrome-profile`).
 
-The `.env` file should stay out of version control.
+The `.env` file must stay out of version control. It is listed in `.gitignore`.
 
 ### `COOKIE_ENCRYPTION_KEY`
 
@@ -94,10 +106,10 @@ AES-256-GCM. Generate a key with:
 openssl rand -base64 32
 ```
 
-Add it to `.env` and restart the container. The next cookie save will rewrite
-the file encrypted. The history log is not encrypted.
+Add it to `.env` and restart the container. The next cookie save rewrites the
+file encrypted. The history log and the Chrome profile are not encrypted.
 
-## Diagram (success + failure paths)
+## Diagram (success and failure paths)
 
 ```
                  +-----------------------+
@@ -112,9 +124,9 @@ the file encrypted. The history log is not encrypted.
                             v
             +------------------------------+
             | load cookies                 |
+            | library login (Polaris)      |
             | NYT login (email/pw or SSO)  |
-            | library login (BCCLS)        |
-            | open Fairview NY Times link  |
+            | open library NY Times link   |
             +--------------+---------------+
                             |
                  +----------+----------+
@@ -146,18 +158,22 @@ the file encrypted. The history log is not encrypted.
 
 ## First-time setup (seed the Chrome profile)
 
-Run `--manual-login` once to establish both your library and NYT sessions.
-This opens Chrome with two tabs and requires X11 forwarding so you can see
-and interact with the browser:
+Seeding gives the browser a believable history before the first automated run.
+The script also logs in with your saved credentials on every run, so this mainly
+helps with NYT's bot detection. Repeat it if NYT starts blocking logins.
 
-```bash
+### Option A: Linux desktop (X11 forwarding)
+
+Run `--manual-login` once. It opens Chrome with two tabs:
+
+```
 # Allow Docker to use your host display
 xhost +local:docker
 
 docker run --rm \
   -e DISPLAY=:1 \
   -e XAUTHORITY=/tmp/.Xauthority \
-  -e TZ=America/New_York \
+  -e TZ=America/Phoenix \
   --env-file .env \
   --user "$(id -u):$(id -g)" \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
@@ -166,24 +182,41 @@ docker run --rm \
   nytimes-redeem node redeem.js --manual-login
 ```
 
-Two tabs open:
-- **Tab 1** — Fairview/BCCLS login: sign in with your library card.
-- **Tab 2** — NY Times login: sign in to your NYT account.
+- **Tab 1:** log in to the Scottsdale Public Library, then open the library's NY
+  Times link and confirm it reaches the redeem page. Do not click Redeem.
+- **Tab 2:** log in to your NYT account.
 
-When both are done, press **Ctrl+C** in the terminal to save cookies from all
-domains and exit.
+When both are done, press **Ctrl+C** in the terminal to save cookies and exit.
+
+### Option B: headless server (Unraid, NAS, VPS)
+
+There is no desktop to forward, so use the seed image, which adds a virtual
+screen and a browser-based remote desktop (noVNC). Full steps are in
+[docs/UNRAID.md](docs/UNRAID.md). In short:
+
+```
+docker build -f Dockerfile.seed -t nytimes-redeem-seed .
+docker run -it --rm --shm-size=1g --name nyt-seed \
+  --env-file .env -e TZ=America/Phoenix -p 6080:6080 \
+  -v "$(pwd)/cookies:/app/cookies" nytimes-redeem-seed
+```
+
+Open `http://<host>:6080/vnc.html`, do both logins, then save from a second
+terminal with `docker kill --signal=INT nyt-seed`. Do not press Ctrl+C in the run
+terminal, because that also shuts down the virtual screen before cookies are written.
 
 ## Run with Docker
 
-```bash
+```
 # Build the image
 docker build -t nytimes-redeem .
 
-# Start the container (runs cron at 6:05 AM ET daily)
+# Start the container (runs cron at 6:05 AM Phoenix time daily)
 docker run -d \
   --name nytimes-redeem \
   --restart unless-stopped \
-  -e TZ=America/New_York \
+  --shm-size=1g \
+  -e TZ=America/Phoenix \
   --env-file .env \
   -v "$(pwd)/cookies:/app/cookies" \
   nytimes-redeem
@@ -207,13 +240,18 @@ docker restart nytimes-redeem
 docker restart nytimes-redeem
 ```
 
-> **Note:** `docker-compose` v1 (the system package on some distros) has a
-> known incompatibility with newer Docker daemons. Use the `docker` commands
-> above directly.
+> **Note:** `docker-compose` v1 (the system package on some distros) has a known
+> incompatibility with newer Docker daemons. Use the `docker` commands above directly.
+
+## Unraid
+
+An Unraid template is in [unraid/my-nytimes-redeem.xml](unraid/my-nytimes-redeem.xml).
+The full guide, including the seed procedure, operation, and troubleshooting, is
+[docs/UNRAID.md](docs/UNRAID.md).
 
 ## Run locally (optional)
 
-```bash
+```
 npm install
 NYTIMES_EMAIL=... NYTIMES_PASSWORD=... \
 LIBRARY_CARD_NUMBER=... LIBRARY_PIN=... \
@@ -224,7 +262,22 @@ node redeem.js
 
 - `redeem.js`: main automation script and all helper functions.
 - `Dockerfile`: Node 24-slim + real Google Chrome + Xvfb + cron.
-- `docker-compose.yml`: reference compose config (use `docker` CLI directly if compose v1 is broken).
-- `crontab`: daily schedule — fires `redeem.js` at 06:05 ET via `xvfb-run`.
+- `Dockerfile.seed`, `seed-entrypoint.sh`: seed image with a virtual desktop and noVNC.
+- `docker-compose.yml`: reference compose config (use the `docker` CLI directly if compose v1 is broken).
+- `crontab`: daily schedule, fires `redeem.js` at 06:05 container time via `xvfb-run`.
 - `update-code.sh`: helper to update `NYTIMES_GIFT_CODE` in `.env`.
+- `.env.example`: template for the settings file.
+- `unraid/`: Unraid Docker template.
+- `docs/UNRAID.md`: Unraid guide.
 - `cookies/`: persisted cookies, Chrome profile, logs, and screenshots (gitignored).
+
+## Security notes
+
+- `.env` holds your library PIN and NYT password in plain text. Keep it out of
+  version control and set its permissions to `600`.
+- Chrome may save your logins in the profile under `cookies/chrome-profile`.
+  Treat the whole `cookies/` folder as private.
+- Chrome runs with `--no-sandbox` as root inside the container, because that is
+  the usual Docker setup. The container is not privileged and mounts only `cookies/`.
+- The script is built to look like a normal visitor to NYT's bot detection. Check
+  that automated access is acceptable under NYT's and the library's terms for your use.

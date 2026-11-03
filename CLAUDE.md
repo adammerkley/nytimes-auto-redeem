@@ -1,23 +1,29 @@
-# nytimes-auto-redeem — Claude Codebase Guide
+# nytimes-auto-redeem - Claude Codebase Guide
 
 ## What this project does
 
 Automates daily redemption of a New York Times subscription gift code obtained
-through the Fairview Public Library (NJ) / BCCLS portal. A headless-but-headful
-real Chrome instance navigates the library site, follows the NYT link, fills the
-gift code if needed, and clicks Redeem. The whole flow runs on a daily cron job
-inside Docker.
+through the Scottsdale Public Library (Polaris catalog). A headless-but-headful
+real Chrome instance logs in to the library, opens the library's NYT link, fills
+the gift code if needed, and clicks Redeem. On Polaris the e-resources link
+redirects straight to the NYT redeem page with the code in the URL. The whole
+flow runs on a daily cron job inside Docker.
 
 ---
 
 ## Repo layout
 
 ```
-redeem.js            Main script — entire automation in one file
+redeem.js            Main script - entire automation in one file
 Dockerfile           Node 24-slim + real Google Chrome + Xvfb + cron
 docker-compose.yml   Runs the container; mounts ./cookies as a volume
-crontab              Fires redeem.js at 06:05 ET daily via xvfb-run
+crontab              Fires redeem.js at 06:05 container time (Phoenix) daily via xvfb-run
 update-code.sh       Interactive helper to update NYTIMES_GIFT_CODE in .env
+.env.example         Template for the settings file (copy to .env)
+Dockerfile.seed      Adds a virtual desktop + noVNC for seeding the profile on a headless host
+seed-entrypoint.sh   Entrypoint for the seed image
+unraid/              Unraid Docker template
+docs/UNRAID.md       Unraid setup, operation and troubleshooting guide
 cookies/             Runtime-only dir (gitignored): cookies, screenshots, history
 package.json         Single dependency: puppeteer-real-browser ^1.4.4
 ```
@@ -30,7 +36,7 @@ package.json         Single dependency: puppeteer-real-browser ^1.4.4
 `puppeteer-real-browser` (`connect()`) launches a real Google Chrome binary
 (installed in the Dockerfile from the official Google apt repo). The container
 runs Xvfb so Chrome can open a full GUI display even with no monitor. This is
-the primary anti-bot-detection strategy — NYT fingerprints headless Chromium
+the primary anti-bot-detection strategy - NYT fingerprints headless Chromium
 very reliably.
 
 ### Persistent Chrome user-data-dir
@@ -40,16 +46,34 @@ profile every morning looks suspicious to NYT.
 
 ### Stealth applied to every page, including new tabs
 `applyStealthToPage()` is wired to `browser.on('targetcreated', ...)` so that
-when the Fairview site opens the NYT link in a new tab, that tab gets the same
+when the library site opens the NYT link in a new tab, that tab gets the same
 UA, viewport, timezone, locale, and JS-level evasions as the original page. The
-old approach only patched the first page — the new tab inherited raw Puppeteer
+old approach only patched the first page - the new tab inherited raw Puppeteer
 defaults, which was the main detection hole.
 
 ### Gift code auto-extraction
-The script tries to extract the gift code from the Fairview link href and page
-text before falling back to `NYTIMES_GIFT_CODE` in `.env`. This means the code
+The script tries to extract the gift code from the library link href, the
+redirected NYT URL and page text before falling back to `NYTIMES_GIFT_CODE` in `.env`. This means the code
 can update on the library side without needing a manual `.env` edit. The
 `NYTIMES_GIFT_CODE` env var is now an optional fallback, not a requirement.
+
+### Library link redirect (Polaris)
+The Scottsdale e-resources link (`esources.aspx?Target=1557`) redirects to the NYT
+redeem page once the library session is logged in, so there is often no tile to
+click. `openNyTimesFromLibrary()` checks for that redirect first, reads the gift
+code from the URL, and only falls back to finding and clicking an NYT link.
+
+### Library login handling
+The Polaris login page itself says "Don't forget to log out", so text matching
+alone cannot tell if a session is active. The "already logged in" check also
+requires that no password box is present. Chrome may autofill saved logins from
+the profile, so the card and PIN fields are emptied before typing.
+
+### Stale Chrome files
+`chrome-launcher` reads the debugging port from `chrome-err.log` inside the
+profile. A log left over from a killed run points at a dead port and causes
+`ECONNREFUSED`. `cleanStaleChromeFiles()` removes it, plus `DevToolsActivePort`,
+`chrome.pid` and the `Singleton*` locks, before every launch.
 
 ### Cookie encryption
 If `COOKIE_ENCRYPTION_KEY` is set, cookies are encrypted at rest with
@@ -62,18 +86,18 @@ log is not encrypted.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `NYTIMES_GIFT_CODE` | No | auto-fetched from Fairview | Gift code fallback |
-| `NYTIMES_EMAIL` | No | — | NYT account email for automated login |
-| `NYTIMES_PASSWORD` | No | — | NYT account password for automated login |
-| `LIBRARY_CARD_NUMBER` | No | — | BCCLS patron card number |
-| `LIBRARY_PIN` | No | — | BCCLS patron PIN |
-| `COOKIE_ENCRYPTION_KEY` | No | — | Encrypts cookie file at rest |
-| `LIBRARY_LOGIN_URL` | No | BCCLS Polaris login URL | Override login page |
-| `FAIRVIEW_HOME_URL` | No | `https://fairviewlibrarynj.org/en/` | Override home page |
+| `NYTIMES_GIFT_CODE` | No | auto-fetched from the library link | Gift code fallback |
+| `NYTIMES_EMAIL` | No | - | NYT account email for automated login |
+| `NYTIMES_PASSWORD` | No | - | NYT account password for automated login |
+| `LIBRARY_CARD_NUMBER` | No | none | Library barcode or username |
+| `LIBRARY_PIN` | No | none | Library PIN or password |
+| `COOKIE_ENCRYPTION_KEY` | No | - | Encrypts cookie file at rest |
+| `LIBRARY_LOGIN_URL` | No | `https://scottsdale.polarislibrary.com/polaris/logon.aspx` | Override login page |
+| `LIBRARY_LINK_URL` | No | `https://scottsdale.polarislibrary.com/polaris/Search/misc/esources.aspx?Target=1557` | Library link that leads to NYT |
 | `CHROME_EXECUTABLE_PATH` | No | `/usr/bin/google-chrome-stable` | System Chrome path |
 | `USER_DATA_DIR` | No | `cookies/chrome-profile` | Chrome profile dir |
-| `USER_AGENT_OVERRIDE` | No | — | Force a specific UA string |
-| `TZ` | No | `America/New_York` | Container/cron timezone |
+| `USER_AGENT_OVERRIDE` | No | - | Force a specific UA string |
+| `TZ` | No | `America/Phoenix` | Container/cron timezone |
 | `LOCALE` | No | `en-US` | Browser locale + Accept-Language |
 
 All variables are loaded from `.env` (gitignored). Pass via `--env-file .env` when using `docker run`.
@@ -107,11 +131,12 @@ node redeem.js --history
 # Build
 docker build -t nytimes-redeem .
 
-# Start (cron fires at 6:05 AM ET daily)
+# Start (cron fires at 6:05 AM Phoenix time daily)
 docker run -d \
   --name nytimes-redeem \
   --restart unless-stopped \
-  -e TZ=America/New_York \
+  --shm-size=1g \
+  -e TZ=America/Phoenix \
   --env-file .env \
   -v "$(pwd)/cookies:/app/cookies" \
   nytimes-redeem
@@ -119,7 +144,7 @@ docker run -d \
 # Watch logs
 docker logs -f nytimes-redeem
 
-# Manual test run — mirrors exactly what cron executes
+# Manual test run - mirrors exactly what cron executes
 docker exec nytimes-redeem bash -c \
   '. /app/.env-cron && xvfb-run -a --server-args="-screen 0 1440x900x24" node /app/redeem.js'
 
@@ -133,9 +158,11 @@ so the cron job (which runs in a sanitized environment) can source them.
 
 ### First-time manual login (seed Chrome profile)
 
-`--manual-login` opens Chrome with **two tabs** — one for BCCLS, one for NYT —
-and requires X11 forwarding so the browser is visible. Run it once before the
-first automated run:
+`--manual-login` opens Chrome with **two tabs**, one for the library and one for
+NYT, and requires a display so the browser is visible. On a Linux desktop use
+X11 forwarding as shown below. On a headless host such as Unraid, use the noVNC
+seed image described in `docs/UNRAID.md`. Run it once before the first
+automated run:
 
 ```bash
 xhost +local:docker
@@ -143,7 +170,7 @@ xhost +local:docker
 docker run --rm \
   -e DISPLAY=:1 \
   -e XAUTHORITY=/tmp/.Xauthority \
-  -e TZ=America/New_York \
+  -e TZ=America/Phoenix \
   --env-file .env \
   --user "$(id -u):$(id -g)" \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
@@ -153,8 +180,11 @@ docker run --rm \
 ```
 
 Complete both logins, then press **Ctrl+C** to save cookies from all relevant
-domains (`nytimes.com`, `myaccount.nytimes.com`, `catalog.bccls.org`,
-`fairviewlibrarynj.org`) into `cookies/nytimes-cookies.json`.
+domains (`nytimes.com`, `myaccount.nytimes.com`,
+`scottsdale.polarislibrary.com`) into `cookies/nytimes-cookies.json`.
+With the noVNC seed image, send the save signal from a second terminal with
+`docker kill --signal=INT <container>`; pressing Ctrl+C in the run terminal also
+stops the virtual screen before cookies are written.
 
 ---
 
@@ -173,14 +203,15 @@ domains (`nytimes.com`, `myaccount.nytimes.com`, `catalog.bccls.org`,
 | `encryptString(plaintext)` | AES-256-GCM encrypt with random salt/IV; no-op without key |
 | `decryptString(payload)` | Inverse of encryptString |
 | `applyStealthToPage(page)` | Set viewport, UA, timezone, Accept-Language, JS evasions |
+| `cleanStaleChromeFiles()` | Delete stale `chrome-err.log`, `DevToolsActivePort`, `chrome.pid` and `Singleton*` before a launch |
 | `launchBrowser(opts)` | Connect via puppeteer-real-browser; wire targetcreated stealth |
 | `findFirstSelector(page, selectors)` | Try selectors in order; return first match |
 | `findButtonByText(page, matchers)` | Find a button/link whose text matches any matcher |
 | `safeScreenshot(page, filename)` | Best-effort screenshot to cookies/ |
 | `promptForLibraryCredentials()` | Readline prompt for card # and PIN |
-| `loginToLibrary(page, creds)` | Navigate to BCCLS and submit login form |
+| `loginToLibrary(page, creds)` | Navigate to the library login page and submit the form (clears autofilled fields first) |
 | `loginToNyTimes(page)` | Navigate to NYT login, fill email + password, detect success |
-| `openNyTimesFromFairview(page, browser)` | Navigate Fairview home → click NYT link → return NYT page |
+| `openNyTimesFromLibrary(page, browser)` | Open the library NYT link (redirect, or tile click as fallback) → return NYT page |
 | `ensureGiftCodeFilled(page)` | Fill gift code input if present and empty |
 | `loadHistory()` | Read redemption-history.json or return empty structure |
 | `saveHistory(history)` | Write history to disk |
@@ -189,7 +220,7 @@ domains (`nytimes.com`, `myaccount.nytimes.com`, `catalog.bccls.org`,
 | `loadCookies(page)` | Load (and decrypt if needed) cookies from disk into page |
 | `saveCookies(page)` | Dump current page cookies to disk (encrypt if key set) |
 | `redeemSubscription()` | Main flow: launch → login → navigate → check → click → log |
-| `manualLogin()` | Opens two tabs (BCCLS + NYT login); Ctrl+C saves cookies from all domains |
+| `manualLogin()` | Opens two tabs (library + NYT login); SIGINT saves cookies from all domains |
 | `showHistory()` | Print formatted history report |
 
 ---
@@ -207,7 +238,7 @@ domains (`nytimes.com`, `myaccount.nytimes.com`, `catalog.bccls.org`,
 | `CODE_EXPIRED_AFTER_CLICK` | Same after click |
 | `NO_BUTTON` | Redeem button not found on page |
 | `REDEEM_UNCLICKABLE` | Button found but click failed |
-| `NYTIMES_LINK_FAILED` | Could not reach NYT page from Fairview site |
+| `NYTIMES_LINK_FAILED` | Could not reach NYT page from the library site |
 | `NO_GIFT_CODE` | Gift code not found anywhere |
 | `UNCLEAR` | Page loaded after click but no recognizable success/failure signal |
 | `ERROR` | Unhandled exception |
@@ -218,16 +249,20 @@ Screenshots are saved to `cookies/` on any failure (and on success).
 
 ## What NOT to do
 
-- Do not commit `.env`, `cookies/`, or `*.png` — all are gitignored.
+- Do not commit `.env`, `cookies/`, or `*.png` - all are gitignored.
 - Do not switch back to `puppeteer-extra` + the stealth plugin. The current
   `puppeteer-real-browser` approach using real Chrome + Xvfb is the reason bot
   detection is bypassed; reverting would likely break it.
-- Do not set `headless: true` in `launchBrowser()` — NYT detects headless mode.
+- Do not set `headless: true` in `launchBrowser()` - NYT detects headless mode.
 - Do not apply stealth only to the first page; `targetcreated` must stay wired
   so new tabs (the NYT tab) also get the fingerprint patch.
 - Do not change `disableXvfb` in `manualLogin()` back to `false`. It must be
   `true` so Chrome renders to the forwarded X11 display and the user can see it.
   The automated flow (`launchBrowser`) correctly uses `disableXvfb: false` so
   Xvfb is managed internally by the container.
-- Do not use `docker-compose` v1 — it is broken on this system. Use the `docker`
+- Do not treat "log out" text on the Polaris login page as proof of a session.
+  Keep the no-password-box condition in `loginToLibrary()`.
+- Do not remove `cleanStaleChromeFiles()`; skipping it brings back `ECONNREFUSED`
+  after any unclean shutdown.
+- Do not use `docker-compose` v1 - it is broken on this system. Use the `docker`
   CLI directly as shown in the Docker workflow section.
