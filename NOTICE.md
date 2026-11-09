@@ -20,8 +20,12 @@ upstream author adds a `LICENSE` file, copy it here and keep its copyright notic
   before every launch.
 - Fixes a false "already logged in" result on the Polaris login page, and clears
   autofilled library login fields before typing.
+- Fixes an intermittent `Execution context was destroyed` error during library login by
+  waiting for the login navigation and retrying on transient page errors.
 - Adds a seed image with a virtual desktop and noVNC for headless hosts, an Unraid
   template, and an Unraid guide.
+- Installs dependencies from `package-lock.json` with `npm ci --ignore-scripts`, and
+  writes a startup line to the container log.
 - Defaults the time zone to `America/Phoenix` and renames the library settings
   (`LIBRARY_LINK_URL` replaces the old home-page setting).
 

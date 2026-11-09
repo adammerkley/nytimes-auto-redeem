@@ -390,7 +390,23 @@ async function promptForLibraryCredentials() {
     return { cardNumber, pin };
 }
 
-async function loginToLibrary(page, { cardNumber, pin }) {
+// Retry on transient browser errors caused by a navigation landing mid-call.
+async function loginToLibrary(page, creds) {
+    const transient = /Execution context was destroyed|Cannot find context|detached|Target closed|Session closed/i;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            return await loginToLibraryOnce(page, creds);
+        } catch (e) {
+            if (attempt === 3 || !transient.test(String(e && e.message))) throw e;
+            console.warn(`⚠️  Library login hit a page navigation race (attempt ${attempt}); retrying...`);
+            await randomDelay(2000, 3500);
+        }
+    }
+    return false;
+}
+
+
+async function loginToLibraryOnce(page, { cardNumber, pin }) {
     console.log('🔐 Logging in to Scottsdale Public Library...');
     await page.goto(LIBRARY_LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
     await randomDelay(1500, 2800); // simulate landing-page glance
@@ -443,24 +459,39 @@ async function loginToLibrary(page, { cardNumber, pin }) {
     await humanType(pinInput, pin, { clear: true });
     await randomDelay(400, 900);
 
+    // Submit with Enter, then give the login navigation time to land. Every page call
+    // after this point can race the navigation, so each one tolerates a destroyed context.
     const navPromise = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null);
     await pinInput.press('Enter').catch(() => null);
-    let navigated = await Promise.race([navPromise, new Promise(r => setTimeout(() => r(null), 1500))]);
+    let navigated = await Promise.race([navPromise, new Promise(r => setTimeout(() => r(null), 12000))]);
 
-    if (!navigated) {
-        const loginButton = await findButtonByText(page, ['log in', 'sign in', 'submit']);
-        if (!loginButton) {
+    const passwordBoxPresent = () =>
+        page.evaluate(() => !!document.querySelector('input[type="password"]')).catch(() => false);
+
+    if (!navigated && await passwordBoxPresent()) {
+        // Enter did not submit; fall back to clicking the button.
+        let loginButton = null;
+        try {
+            loginButton = await findButtonByText(page, ['log in', 'sign in', 'submit']);
+        } catch (e) {
+            loginButton = null; // navigation landed while searching; handled below
+        }
+        if (loginButton) {
+            const navAfterClick = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null);
+            if (!await humanClick(page, loginButton)) {
+                if (await passwordBoxPresent()) {
+                    console.error('❌ ERROR: Login button not clickable.');
+                    await safeScreenshot(page, 'library-login-unclickable.png');
+                    return false;
+                }
+            } else {
+                navigated = await navAfterClick;
+            }
+        } else if (await passwordBoxPresent()) {
             console.error('❌ ERROR: Could not find library login button.');
             await safeScreenshot(page, 'library-login-missing-button.png');
             return false;
         }
-        const navAfterClick = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null);
-        if (!await humanClick(page, loginButton)) {
-            console.error('❌ ERROR: Login button not clickable.');
-            await safeScreenshot(page, 'library-login-unclickable.png');
-            return false;
-        }
-        navigated = await navAfterClick;
     }
 
     const pageText = await page.evaluate(() => document.body.innerText.toLowerCase()).catch(() => '');

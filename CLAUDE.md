@@ -67,7 +67,10 @@ code from the URL, and only falls back to finding and clicking an NYT link.
 The Polaris login page itself says "Don't forget to log out", so text matching
 alone cannot tell if a session is active. The "already logged in" check also
 requires that no password box is present. Chrome may autofill saved logins from
-the profile, so the card and PIN fields are emptied before typing.
+the profile, so the card and PIN fields are emptied before typing. After Enter, the
+script waits up to 12 s for the login navigation, only clicks the button if the
+password box is still there, and `loginToLibrary` retries up to 3 times on
+"Execution context was destroyed" style errors.
 
 ### Stale Chrome files
 `chrome-launcher` reads the debugging port from `chrome-err.log` inside the

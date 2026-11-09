@@ -133,7 +133,7 @@ Redemption successful!
 
 ### Messages that look wrong but are not
 
-- **"Could not find library login button":** cosmetic. The Enter key submits the form before the script looks for the button, and the login does work.
+- **"Library login hit a page navigation race ... retrying":** the page changed while the script was looking at it. The script retries up to 3 times on its own.
 - **"WARNING: Multiple failures":** counts failures among the last 10 attempts. Old failures roll out as new successes accumulate.
 - **"Current code age":** refers to the gift code in the library link, not your pass.
 - **dbus, machine-id, WebGL or GPU cache errors in raw Chrome logs:** normal inside Docker.
@@ -149,6 +149,7 @@ Redemption successful!
 | Seed container exits on Ctrl+C and nothing is saved | Ctrl+C stops every process in the container, including the screen | Use `docker kill --signal=INT nyt-seed` from a second terminal |
 | Nothing happens at 6:05 AM | Container stopped, or wrong time zone | `docker ps`, check `TZ`, then read `docker logs` |
 | The `docker exec` test seems to hang | Output is piped to `tail`, which waits until the run finishes | Wait up to about 4 minutes, since the script adds human-like delays |
+| `Execution context was destroyed, most likely because of a navigation` | The login page navigated while the script was reading it (older code only) | Fixed in current code: the script waits up to 12 s for the login to land and retries. If you still see it, your container is running old code: re-extract, `docker build -t nytimes-redeem .`, and recreate the container |
 | Chrome processes left behind after a crash | Orphaned processes hold the profile | `docker restart nytimes-redeem` |
 
 ## 9. Security notes

@@ -40,8 +40,12 @@ ENV CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+# Install the exact versions recorded in package-lock.json. `npm ci` fails if the
+# lockfile and package.json disagree, and --ignore-scripts stops dependencies from
+# running install-time scripts (the only one is the optional native `sleep` addon,
+# which the xvfb package does not need).
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 COPY redeem.js ./
 COPY crontab /etc/cron.d/nytimes-cron
@@ -52,8 +56,10 @@ RUN chmod 0644 /etc/cron.d/nytimes-cron \
  && mkdir -p /app/cookies
 
 # cron starts with a sanitized env, so dump the container env to a file the
-# cron job can source before running redeem.js. Then start cron and tail the log.
+# cron job can source before running redeem.js. Then start cron, write a startup
+# line so the log window is not blank, and tail the log (last 60 lines first).
 CMD printenv | grep -E '^(NYTIMES_|LIBRARY_|COOKIE_|CHROME_|USER_DATA_|TZ|LOCALE|USER_AGENT_)' \
         | sed 's/^\(.*\)$/export \1/' > /app/.env-cron \
  && cron \
- && tail -f /var/log/cron.log
+ && echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] nytimes-redeem started. Next run: 06:05 daily (TZ=${TZ:-not set})" >> /var/log/cron.log \
+ && tail -n 60 -f /var/log/cron.log
