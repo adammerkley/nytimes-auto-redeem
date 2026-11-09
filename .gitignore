@@ -21,3 +21,6 @@ node_modules/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Allow the Unraid icon
+!unraid/*.png
