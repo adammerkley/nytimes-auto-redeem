@@ -56,10 +56,11 @@ RUN chmod 0644 /etc/cron.d/nytimes-cron \
  && mkdir -p /app/cookies
 
 # cron starts with a sanitized env, so dump the container env to a file the
-# cron job can source before running redeem.js. Then start cron, write a startup
+# cron job can source before running redeem.js. Each value is single-quoted so
+# passwords with characters like & ; $ or a space survive. Then start cron, write a startup
 # line so the log window is not blank, and tail the log (last 60 lines first).
 CMD printenv | grep -E '^(NYTIMES_|LIBRARY_|COOKIE_|CHROME_|USER_DATA_|TZ|LOCALE|USER_AGENT_)' \
-        | sed 's/^\(.*\)$/export \1/' > /app/.env-cron \
+        | sed -e "s/'/'\\\\''/g" -e "s/^\([^=]*\)=\(.*\)\$/export \1='\2'/" > /app/.env-cron \
  && cron \
  && echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] nytimes-redeem started. Next run: 06:05 daily (TZ=${TZ:-not set})" >> /var/log/cron.log \
  && tail -n 60 -f /var/log/cron.log
