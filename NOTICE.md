@@ -26,6 +26,7 @@ upstream author adds a `LICENSE` file, copy it here and keep its copyright notic
   template, and an Unraid guide.
 - Installs dependencies from `package-lock.json` with `npm ci --ignore-scripts`, and
   writes a startup line to the container log.
+- Publishes the image to the GitHub Container Registry on every push to `main`.
 - Quotes the settings that cron reads, so passwords containing characters such as
   `&`, `;`, `$` or a space work in the scheduled run.
 - Defaults the time zone to `America/Phoenix` and renames the library settings

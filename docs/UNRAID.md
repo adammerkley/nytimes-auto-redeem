@@ -107,7 +107,19 @@ docker run -d --name nytimes-redeem --restart unless-stopped \
 3. Docker tab, **Add Container**, choose `nytimes-redeem` under User templates.
 4. Fill in the four credential fields, click **Apply**, and turn **Autostart** on.
 
-The Docker tab may show "not available" under updates. That is normal for a locally built image. After you rebuild the image, open the container's Edit page and click Apply to recreate it from the new image.
+The template points at the published image (see the next section). If you build locally instead, set **Repository** to `nytimes-redeem`. The Docker tab then shows "not available" under updates, which is normal for a locally built image. After you rebuild the image, open the container's Edit page and click Apply to recreate it from the new image.
+
+### Automatic updates from GitHub (optional)
+
+The repository publishes a ready-built image to the GitHub Container Registry every time `main` changes (`.github/workflows/docker-publish.yml`). The image holds the code and Google Chrome, which is installed from Google's repository during the build. It holds no passwords, because those are passed in when the container starts.
+
+1. Push to `main`, then check the **Actions** tab for a green "Publish image" run.
+2. Make the package public once: GitHub profile, **Packages**, `nytimes-auto-redeem`, **Package settings**, **Change visibility**. Until then Unraid cannot pull it without a login.
+3. In the container's Edit page, set **Repository** to `ghcr.io/adammerkley/nytimes-auto-redeem:latest` and click Apply.
+4. After each later push, the Docker tab shows "update ready". Click it to update. Your settings, the icon and `cookies/` are kept.
+5. For scheduled updates, install **Auto Update Applications** from Community Applications and enable it for this container. Leave it off at first and update by hand, because any push to `main` then goes live on a container that holds your passwords.
+
+To build the seed image on top of the published image, run `docker build --build-arg BASE=ghcr.io/adammerkley/nytimes-auto-redeem:latest -f Dockerfile.seed -t nytimes-redeem-seed .` and use `nytimes-redeem-seed` as before.
 
 ## 7. Daily operation
 

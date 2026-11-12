@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>nytimes-redeem</Name>
-  <Repository>nytimes-redeem</Repository>
+  <Repository>ghcr.io/adammerkley/nytimes-auto-redeem:latest</Repository>
   <Registry/>
   <Network>bridge</Network>
   <MyIP/>
@@ -20,7 +20,7 @@
   <DateInstalled/>
   <DonateText/>
   <DonateLink/>
-  <Requires>Local image. Build it first: cd /mnt/user/appdata/nytimes-redeem and run docker build -t nytimes-redeem .</Requires>
+  <Requires>Pulls the published image from GitHub Container Registry. If you prefer a local build, run docker build -t nytimes-redeem . in the project folder and set Repository to nytimes-redeem.</Requires>
   <Config Name="Cookies and Chrome profile" Target="/app/cookies" Default="/mnt/user/appdata/nytimes-redeem/cookies" Mode="rw" Description="Saved sessions, Chrome profile, redemption history and failure screenshots." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nytimes-redeem/cookies</Config>
   <Config Name="Time zone" Target="TZ" Default="America/Phoenix" Mode="" Description="Sets what time 6:05 AM means for the daily run." Type="Variable" Display="always" Required="true" Mask="false">America/Phoenix</Config>
   <Config Name="Library login URL" Target="LIBRARY_LOGIN_URL" Default="https://scottsdale.polarislibrary.com/polaris/logon.aspx" Mode="" Description="Scottsdale Public Library (Polaris) login page." Type="Variable" Display="always" Required="true" Mask="false">https://scottsdale.polarislibrary.com/polaris/logon.aspx</Config>
