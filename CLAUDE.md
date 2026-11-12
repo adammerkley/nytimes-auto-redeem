@@ -15,7 +15,7 @@ flow runs on a daily cron job inside Docker.
 
 ```
 redeem.js            Main script - entire automation in one file
-Dockerfile           Node 24-slim + real Google Chrome + Xvfb + cron
+Dockerfile           Node 24-slim + Xvfb + cron (Chrome installed at start)
 docker-compose.yml   Runs the container; mounts ./cookies as a volume
 crontab              Fires redeem.js at 06:05 container time (Phoenix) daily via xvfb-run
 update-code.sh       Interactive helper to update NYTIMES_GIFT_CODE in .env

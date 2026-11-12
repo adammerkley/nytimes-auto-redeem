@@ -2,5 +2,5 @@
 # environment via /app/.env-cron (set up by the Dockerfile CMD), and we wrap
 # node in `xvfb-run` so real Chrome can launch a virtual display.
 SHELL=/bin/bash
-05 6 * * * . /app/.env-cron && cd /app && xvfb-run -a --server-args="-screen 0 1440x900x24" /usr/local/bin/node /app/redeem.js >> /var/log/cron.log 2>&1
+05 6 * * * ( . /app/.env-cron && /usr/local/bin/ensure-chrome.sh && cd /app && xvfb-run -a --server-args="-screen 0 1440x900x24" /usr/local/bin/node /app/redeem.js ) >> /var/log/cron.log 2>&1
 # Note: TZ is set via docker-compose (America/Phoenix), so 6:05 = Arizona time, and Arizona has no DST.

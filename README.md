@@ -261,7 +261,7 @@ node redeem.js
 ## Files at a glance
 
 - `redeem.js`: main automation script and all helper functions.
-- `Dockerfile`: Node 24-slim + real Google Chrome + Xvfb + cron.
+- `Dockerfile`: Node 24-slim + Xvfb + cron. Real Google Chrome is installed from Google's repository when the container starts (`ensure-chrome.sh`).
 - `Dockerfile.seed`, `seed-entrypoint.sh`: seed image with a virtual desktop and noVNC.
 - `docker-compose.yml`: reference compose config (use the `docker` CLI directly if compose v1 is broken).
 - `crontab`: daily schedule, fires `redeem.js` at 06:05 container time via `xvfb-run`.

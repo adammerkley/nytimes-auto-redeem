@@ -111,7 +111,7 @@ The template points at the published image (see the next section). If you build 
 
 ### Automatic updates from GitHub (optional)
 
-The repository publishes a ready-built image to the GitHub Container Registry every time `main` changes (`.github/workflows/docker-publish.yml`). The image holds the code and Google Chrome, which is installed from Google's repository during the build. It holds no passwords, because those are passed in when the container starts.
+The repository publishes a ready-built image to the GitHub Container Registry every time `main` changes (`.github/workflows/docker-publish.yml`). The image holds the code and supporting libraries, not the Chrome browser. On first start the container installs Google Chrome from Google's own repository, which takes a minute or two and needs internet access. This repeats whenever the container is recreated, for example after an update, and the log window shows its progress. The image holds no passwords, because those are passed in when the container starts.
 
 1. Push to `main`, then check the **Actions** tab for a green "Publish image" run.
 2. Make the package public once: GitHub profile, **Packages**, `nytimes-auto-redeem`, **Package settings**, **Change visibility**. Until then Unraid cannot pull it without a login.
@@ -162,6 +162,7 @@ Redemption successful!
 | Nothing happens at 6:05 AM | Container stopped, or wrong time zone | `docker ps`, check `TZ`, then read `docker logs` |
 | The `docker exec` test seems to hang | Output is piped to `tail`, which waits until the run finishes | Wait up to about 4 minutes, since the script adds human-like delays |
 | `Execution context was destroyed, most likely because of a navigation` | The login page navigated while the script was reading it (older code only) | Fixed in current code: the script waits up to 12 s for the login to land and retries. If you still see it, your container is running old code: re-extract, `docker build -t nytimes-redeem .`, and recreate the container |
+| Log says "could not install Chrome" | The container could not reach Google's package server at start, often right after a reboot before the network is up | It retries three times, and again before the 6:05 AM run. If it keeps failing, check the Unraid DNS and internet access, then `docker restart nytimes-redeem` |
 | Chrome processes left behind after a crash | Orphaned processes hold the profile | `docker restart nytimes-redeem` |
 
 ## 9. Security notes
