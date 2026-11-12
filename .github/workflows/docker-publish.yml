@@ -1,10 +1,20 @@
 name: Publish image
 
-# Builds the Docker image on every push to main and publishes it to the GitHub
-# Container Registry, so Unraid (or any Docker host) can pull updates.
+# Builds the Docker image when something that goes into it changes on main, and
+# publishes it to the GitHub Container Registry, so Unraid (or any Docker host)
+# can pull updates. Documentation-only pushes do not trigger a build. Run it by
+# hand from the Actions tab (Run workflow) to force a rebuild.
 on:
   push:
     branches: [main]
+    paths:
+      - Dockerfile
+      - ensure-chrome.sh
+      - crontab
+      - redeem.js
+      - package.json
+      - package-lock.json
+      - .github/workflows/docker-publish.yml
   workflow_dispatch:
 
 permissions:

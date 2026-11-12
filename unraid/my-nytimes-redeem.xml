@@ -9,7 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/adammerkley/nytimes-auto-redeem</Support>
   <Project>https://github.com/adammerkley/nytimes-auto-redeem</Project>
-  <Overview>Redeems the Scottsdale Public Library New York Times pass every day at 6:05 AM (container time zone). Uses a real headful Chrome inside a virtual display. The image is built locally with: docker build -t nytimes-redeem . in the project folder (for example /mnt/user/appdata/nytimes-redeem). Logs and failure screenshots are written to the cookies folder.</Overview>
+  <Overview>Redeems the Scottsdale Public Library New York Times pass every day at 6:05 AM (container time zone). Uses a real headful Chrome inside a virtual display. The image is published at ghcr.io/adammerkley/nytimes-auto-redeem and Chrome is installed from Google on first start, so the first start needs internet access. Logs and failure screenshots are written to the cookies folder.</Overview>
   <Category>Tools:</Category>
   <WebUI/>
   <TemplateURL/>

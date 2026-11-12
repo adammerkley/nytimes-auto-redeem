@@ -16,6 +16,9 @@ flow runs on a daily cron job inside Docker.
 ```
 redeem.js            Main script - entire automation in one file
 Dockerfile           Node 24-slim + Xvfb + cron (Chrome installed at start)
+ensure-chrome.sh     Installs Google Chrome from Google's repo when missing (container start and before each run)
+.github/workflows/   ci.yml (syntax check), docker-publish.yml (publishes the image to ghcr.io)
+NOTICE.md            Credit to the upstream project and list of changes
 docker-compose.yml   Runs the container; mounts ./cookies as a volume
 crontab              Fires redeem.js at 06:05 container time (Phoenix) daily via xvfb-run
 update-code.sh       Interactive helper to update NYTIMES_GIFT_CODE in .env

@@ -13,6 +13,8 @@ Every day at 6:05 AM (container time zone, `America/Phoenix`) the container:
 4. Opens the library's e-resources link, which redirects to the NYT redeem page with the gift code in the URL.
 5. Clicks **Redeem**, saves cookies, and records the attempt in a history file.
 
+Chrome is installed from Google's repository when the container first starts, so that first start needs internet access and takes a minute or less.
+
 The library pass lasts about 72 hours. Redeeming again while a pass is active has been tested and caused no problems.
 
 ## 2. Files and locations
@@ -27,11 +29,15 @@ The library pass lasts about 72 hours. Redeeming again while a pass is active ha
 | Attempt history (last 30) | `cookies/redemption-history.json` |
 | Failure screenshots | `cookies/*.png`, for example `library-no-nytimes.png`, `library-login-result.png`, `bot-detected.png` |
 | Unraid template | `unraid/my-nytimes-redeem.xml` |
+| Published image | `ghcr.io/adammerkley/nytimes-auto-redeem:latest`, built by `.github/workflows/docker-publish.yml` |
+| Chrome installer | `ensure-chrome.sh`, runs at container start and before each scheduled run |
 | Seed image files | `Dockerfile.seed`, `seed-entrypoint.sh` |
 
 From a PC on your network the project folder is at `\\<unraid-ip>\appdata\nytimes-redeem\`.
 
 ## 3. Install
+
+These steps build the image on the server. To use the prebuilt image instead, skip the `docker build` line and follow "Automatic updates from GitHub" in section 6.
 
 ```
 cd /mnt/user/appdata
@@ -113,7 +119,7 @@ The template points at the published image (see the next section). If you build 
 
 The repository publishes a ready-built image to the GitHub Container Registry every time `main` changes (`.github/workflows/docker-publish.yml`). The image holds the code and supporting libraries, not the Chrome browser. On first start the container installs Google Chrome from Google's own repository, which takes a minute or two and needs internet access. This repeats whenever the container is recreated, for example after an update, and the log window shows its progress. The image holds no passwords, because those are passed in when the container starts.
 
-1. Push to `main`, then check the **Actions** tab for a green "Publish image" run.
+1. Push to `main`, then check the **Actions** tab for a green "Publish image" run. Only changes to `redeem.js`, `Dockerfile`, `ensure-chrome.sh`, `crontab` or the dependency files trigger a build, so documentation-only pushes do not. To force a rebuild, open **Actions**, choose **Publish image**, and click **Run workflow**.
 2. Make the package public once: GitHub profile, **Packages**, `nytimes-auto-redeem`, **Package settings**, **Change visibility**. Until then Unraid cannot pull it without a login.
 3. In the container's Edit page, set **Repository** to `ghcr.io/adammerkley/nytimes-auto-redeem:latest` and click Apply.
 4. After each later push, the Docker tab shows "update ready". Click it to update. Your settings, the icon and `cookies/` are kept.

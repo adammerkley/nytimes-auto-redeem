@@ -34,6 +34,10 @@ The goal is to redeem the time-limited library pass reliably without manual step
   in the URL, so the code is picked up automatically.
 - A cron job inside the container runs the redemption daily at 6:05 AM in the
   container's time zone (`America/Phoenix` by default).
+- The Docker image does not contain Chrome. `ensure-chrome.sh` installs Google
+  Chrome from Google's repository when the container starts (usually under a
+  minute, and it needs internet access), and again before each scheduled run if
+  Chrome is missing.
 
 ## Functions and what they do
 
@@ -207,6 +211,12 @@ terminal, because that also shuts down the virtual screen before cookies are wri
 
 ## Run with Docker
 
+You can build the image yourself (below) or use the prebuilt one. GitHub builds
+and publishes it to `ghcr.io/adammerkley/nytimes-auto-redeem:latest` on every
+push to `main` (see `.github/workflows/docker-publish.yml`). To use it, skip the
+build step and put that image name at the end of the `docker run` command in place
+of `nytimes-redeem`.
+
 ```
 # Build the image
 docker build -t nytimes-redeem .
@@ -247,7 +257,8 @@ docker restart nytimes-redeem
 
 An Unraid template is in [unraid/my-nytimes-redeem.xml](unraid/my-nytimes-redeem.xml).
 The full guide, including the seed procedure, operation, and troubleshooting, is
-[docs/UNRAID.md](docs/UNRAID.md).
+[docs/UNRAID.md](docs/UNRAID.md). The template pulls the prebuilt image, so the
+Docker tab can show "update ready" after each push to `main`.
 
 ## Run locally (optional)
 
@@ -262,6 +273,9 @@ node redeem.js
 
 - `redeem.js`: main automation script and all helper functions.
 - `Dockerfile`: Node 24-slim + Xvfb + cron. Real Google Chrome is installed from Google's repository when the container starts (`ensure-chrome.sh`).
+- `ensure-chrome.sh`: installs Google Chrome when it is missing (container start and before each run).
+- `.github/workflows/`: `ci.yml` checks the script syntax, `docker-publish.yml` publishes the image to ghcr.io.
+- `NOTICE.md`: credit to the upstream project and a list of changes.
 - `Dockerfile.seed`, `seed-entrypoint.sh`: seed image with a virtual desktop and noVNC.
 - `docker-compose.yml`: reference compose config (use the `docker` CLI directly if compose v1 is broken).
 - `crontab`: daily schedule, fires `redeem.js` at 06:05 container time via `xvfb-run`.
