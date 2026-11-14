@@ -884,7 +884,7 @@ async function saveHistory(history) {
     await fs.writeFile(LOG_PATH, JSON.stringify(history, null, 2));
 }
 
-async function logAttempt(success, status, codeUsed) {
+async function logAttempt(success, status, codeUsed, expires) {
     const history = await loadHistory();
     if (codeUsed && codeUsed !== history.currentCode) {
         console.log(`📝 New code detected: ${codeUsed.substring(0, 8)}...`);
@@ -899,7 +899,8 @@ async function logAttempt(success, status, codeUsed) {
         timestamp: new Date().toISOString(),
         success,
         status,
-        codeUsed
+        codeUsed,
+        ...(expires ? { expires } : {})
     });
     if (history.attempts.length > 30) history.attempts = history.attempts.slice(-30);
     await saveHistory(history);
@@ -1151,8 +1152,12 @@ async function redeemSubscription() {
             // Re-evaluate after re-auth; fall through to UNCLEAR if still ambiguous.
         }
 
-        let isSuccess = includesAny(resultContent, SUCCESS_SIGNALS);
-        let confirmedAlreadyRedeemed = false;
+        // NYT ignores a Redeem click while a pass is still active and shows
+        // "Code already redeemed". That page also contains the word "redeemed",
+        // so classify it before the generic success keywords.
+        const isAlreadyRedeemedText = (t) => t.includes('already redeemed') || t.includes('already claimed');
+        let confirmedAlreadyRedeemed = isAlreadyRedeemedText(resultContent);
+        let isSuccess = confirmedAlreadyRedeemed || includesAny(resultContent, SUCCESS_SIGNALS);
 
         // NYT's redemption confirmation occasionally renders a transient error
         // page (wording varies — a "technical issue" message, or just a generic
@@ -1169,7 +1174,7 @@ async function redeemSubscription() {
             await nytimesPage.goto(preClickUrl, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null);
             await randomDelay(2000, 4000);
             resultContent = await nytimesPage.evaluate(() => document.body.innerText.toLowerCase()).catch(() => resultContent);
-            if (resultContent.includes('already redeemed') || resultContent.includes('already claimed')) {
+            if (isAlreadyRedeemedText(resultContent)) {
                 confirmedAlreadyRedeemed = true;
                 isSuccess = true;
                 break;
@@ -1178,10 +1183,18 @@ async function redeemSubscription() {
         }
 
         if (isSuccess) {
-            console.log('✅ Redemption successful!');
+            // Pull "Your access will expire on <date>" from the success page, if shown.
+            const expiryMatch = resultContent.match(/expires? on ([a-z]+ \d{1,2}, \d{4})/);
+            const expires = expiryMatch ? expiryMatch[1] : null;
+            if (confirmedAlreadyRedeemed) {
+                console.log('ℹ️  Code already redeemed: a pass is still active, so NYT ignored the click.');
+            } else {
+                console.log('✅ Redemption successful!');
+            }
+            if (expires) console.log(`📅 Access expires on: ${expires}`);
             await safeScreenshot(nytimesPage, 'success.png');
             await saveCookies(nytimesPage);
-            await logAttempt(true, confirmedAlreadyRedeemed ? 'ALREADY_REDEEMED' : 'SUCCESS', giftCode);
+            await logAttempt(true, confirmedAlreadyRedeemed ? 'ALREADY_REDEEMED' : 'SUCCESS', giftCode, expires);
             return true;
         }
 
@@ -1288,7 +1301,7 @@ async function showHistory() {
         history.attempts.slice(-10).reverse().forEach((a) => {
             const icon = a.success ? '✅' : '❌';
             const date = new Date(a.timestamp).toLocaleString();
-            console.log(`  ${icon} ${date} - ${a.status}`);
+            console.log(`  ${icon} ${date} - ${a.status}${a.expires ? ` (expires ${a.expires})` : ''}`);
         });
         const ok = history.attempts.filter(a => a.success).length;
         const rate = ((ok / history.attempts.length) * 100).toFixed(1);
