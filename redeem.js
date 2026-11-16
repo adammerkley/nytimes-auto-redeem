@@ -1185,7 +1185,7 @@ async function redeemSubscription() {
         if (isSuccess) {
             // Pull "Your access will expire on <date>" from the success page, if shown.
             const expiryMatch = resultContent.match(/expires? on ([a-z]+ \d{1,2}, \d{4})/);
-            const expires = expiryMatch ? expiryMatch[1] : null;
+            const expires = expiryMatch ? expiryMatch[1].charAt(0).toUpperCase() + expiryMatch[1].slice(1) : null;
             if (confirmedAlreadyRedeemed) {
                 console.log('ℹ️  Code already redeemed: a pass is still active, so NYT ignored the click.');
             } else {
